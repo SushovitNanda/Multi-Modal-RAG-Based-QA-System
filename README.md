@@ -33,6 +33,85 @@ A comprehensive Retrieval-Augmented Generation (RAG) system for question-answeri
   - **Streamlit Web UI**: Interactive chatbot with real-time retrieval visualization
   - **CLI Interface**: Command-line tool for batch processing and scripting
 
+
+##  Research & Methodology
+
+### Preliminary Information Retrieval Studies
+
+The selection of retrieval methods (TF-IDF, Word2Vec, SBERT) was based on comprehensive preliminary IR evaluation studies documented in `Information_Retrieval.ipynb` and `ir_evaluation_results.csv`. These studies evaluated multiple embedding approaches on the target dataset to determine optimal retrieval strategies.
+
+#### Evaluation Results Summary
+
+The preliminary studies compared 13 different retrieval methods using standard IR metrics (MRR, NDCG, Precision, Recall, F1):
+
+| Method | MRR | NDCG | F1 | F1@5 |
+|--------|-----|------|----|----|
+| **TF-IDF (1-gram)** | 0.502 | 0.453 | 0.224 | 0.211 |
+| **TF-IDF (2-gram)** | 0.499 | 0.452 | 0.228 | 0.215 |
+| **Word2Vec** | 0.405 | 0.377 | 0.174 | 0.165 |
+| **TF-IDF + Word2Vec** | **0.502** | **0.454** | **0.232** | **0.216** |
+| Sentence-BERT | 0.399 | 0.363 | 0.168 | 0.164 |
+| MPNet | 0.439 | 0.372 | 0.178 | 0.181 |
+| LaBSE | 0.415 | 0.397 | 0.187 | 0.182 |
+
+**Key Finding**: The combination of TF-IDF + Word2Vec achieved the best overall performance, outperforming dense transformer models (SBERT, MPNet) on this specific dataset.
+
+#### Why TF-IDF + Word2Vec Outperforms SBERT Initially
+
+The dataset characteristics explain why sparse and lexical methods excel:
+
+**Dataset Characteristics:**
+- High lexical repetition (same technical terms appear frequently)
+- Technical economic terminology
+- OCR distortions from scanned documents
+- Short chunk fragments (600 characters)
+- Relevance defined as "same page" (structural, not semantic)
+
+**TF-IDF Advantages:**
+- **Detects rare tokens perfectly**: Technical terms and domain-specific vocabulary are captured precisely
+- **Matches pages based on term overlap**: Since relevance is page-based, exact term matching is highly effective
+- **Robust to OCR noise**: Sparse representations are less affected by character-level OCR errors
+
+**Word2Vec Advantages:**
+- **Local window co-occurrence**: Captures word relationships in short contexts
+- **Robust to short chunks**: Works well with fragmented text (600-char chunks)
+- **Less sensitive to OCR noise**: Averaged word embeddings smooth out individual character errors
+
+**Dense Models (SBERT) Limitations:**
+- **Semantic similarity collapse**: All chunks appear similar in dense semantic space, reducing discriminative power
+- **OCR noise degradation**: Dense embeddings amplify character-level errors
+- **Over-smooth semantic space**: Fine-grained distinctions (like page boundaries) are lost
+- **Page labels ≠ semantic relevance**: Dense models optimize for semantic similarity, but relevance here is structural (same page)
+
+#### Why All Three Methods Are Used Together
+
+Despite TF-IDF + Word2Vec performing best individually, the system uses **TF-IDF + Word2Vec + SBERT** together because:
+
+1. **Complementary Strengths**: 
+   - TF-IDF excels at exact keyword matching and rare term detection
+   - Word2Vec captures local semantic relationships
+   - SBERT provides broader contextual understanding for queries that require semantic interpretation
+
+2. **Query Diversity**: Different queries benefit from different methods:
+   - Factual queries → TF-IDF (exact matches)
+   - Conceptual queries → SBERT (semantic understanding)
+   - Technical queries → Word2Vec (domain vocabulary)
+
+3. **Robustness**: Combining methods reduces failure modes when one method underperforms
+
+4. **Hybrid Fusion**: The system uses either Reciprocal Rank Fusion (RRF) or weighted sum to intelligently combine rankings from all three methods
+
+#### Cross-Encoder Reranking
+
+A cross-encoder reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`) is applied after initial retrieval because:
+
+- **Higher Precision**: Cross-encoders see query and passage together, enabling more accurate relevance scoring
+- **Fine-Grained Ranking**: Better at distinguishing subtle differences between top candidates
+- **Cross-Modal Support**: Boosts scores for image chunks when CLIP similarity is high
+- **Hallucination Prevention**: Normalized scores enable relevance threshold filtering (default: 0.30)
+
+The reranker operates on the top 20 candidates from hybrid retrieval, selecting the final top 5 passages for LLM generation.
+
 ##  Requirements
 
 ### System Requirements
