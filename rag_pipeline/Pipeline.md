@@ -2,7 +2,7 @@
 
 This document provides detailed explanations of each module in the `rag_pipeline` package, describing their functions, classes, and how they work together to build the multi-modal RAG system.
 
-## 📦 Package Overview
+##  Package Overview
 
 The `rag_pipeline` package is organized into modular components that handle different stages of the RAG pipeline:
 
@@ -20,7 +20,7 @@ rag_pipeline/
 
 ---
 
-## 📄 `__init__.py`
+##  `__init__.py`
 
 **Purpose**: Package initialization and public API exposure.
 
@@ -35,7 +35,7 @@ from rag_pipeline import config
 
 ---
 
-## ⚙️ `config.py`
+##  `config.py`
 
 **Purpose**: Centralized configuration management for the entire system.
 
@@ -74,14 +74,7 @@ from rag_pipeline import config
 - `cross_encoder`: 0.20 (20%)
 - Includes validation to ensure weights sum to 1.0
 
-**`PromptInstructions`**:
-- Loads and structures prompt configuration from `Prompt.json`
-- Contains: role, name, purpose, behavior_rules, rag_pipeline, langchain_components, answer_format, failure_modes
-
 #### **Helper Functions**
-
-**`load_prompt_instructions()`**:
-- Reads `Prompt.json` and returns structured `PromptInstructions` object
 
 **`load_openai_key()`**:
 - Loads OpenAI API key from `Api_key.txt` (optional, for OpenAI models)
@@ -99,7 +92,7 @@ from rag_pipeline import config
 
 ---
 
-## 📥 `ingestion.py`
+##  `ingestion.py`
 
 **Purpose**: Extract content from multi-modal PDF documents (text, tables, images with OCR).
 
@@ -156,7 +149,7 @@ from rag_pipeline import config
 
 ---
 
-## ✂️ `chunking.py`
+## `chunking.py`
 
 **Purpose**: Split documents into manageable chunks with metadata preservation.
 
@@ -204,7 +197,7 @@ from rag_pipeline import config
 
 ---
 
-## 🧮 `embeddings.py`
+## `embeddings.py`
 
 **Purpose**: Generate various types of embeddings for retrieval.
 
@@ -263,7 +256,7 @@ from rag_pipeline import config
 
 ---
 
-## 🔍 `retrieval.py`
+## `retrieval.py`
 
 **Purpose**: Hybrid retrieval, reranking, and fusion logic.
 
@@ -388,7 +381,7 @@ Container for all retrieval components:
 
 ---
 
-## 🔄 `pipeline.py`
+## `pipeline.py`
 
 **Purpose**: Main orchestration - coordinates all pipeline stages.
 
@@ -450,7 +443,7 @@ Container for all retrieval components:
 
 ---
 
-## 📊 `evaluation.py`
+##  `evaluation.py`
 
 **Purpose**: Information Retrieval evaluation metrics.
 
@@ -493,7 +486,7 @@ Container for all retrieval components:
 
 ---
 
-## 🔗 Module Interactions
+##  Module Interactions
 
 ### Data Flow
 
@@ -541,7 +534,7 @@ Container for all retrieval components:
 
 ---
 
-## 🎯 Usage Examples
+##  Usage Examples
 
 ### Building Pipeline Programmatically
 
@@ -601,7 +594,7 @@ print(f"MRR: {metrics['mrr']}, NDCG@5: {metrics['ndcg_at_k']}")
 
 ---
 
-## 🔧 Extension Points
+##  Extension Points
 
 ### Adding New Retrieval Method
 
@@ -625,6 +618,4 @@ print(f"MRR: {metrics['mrr']}, NDCG@5: {metrics['ndcg_at_k']}")
 
 ---
 
-**Last Updated**: 2025  
-**Maintainer**: RAG Pipeline Team
 
