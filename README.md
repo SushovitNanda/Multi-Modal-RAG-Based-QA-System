@@ -1,4 +1,4 @@
-# Multi-Modal RAG QA Chatbot
+# Multi-Modal RAG Based QA Chatbot
 
 A comprehensive Retrieval-Augmented Generation (RAG) system for question-answering over multi-modal documents (PDFs with text, tables, images, charts). The system uses hybrid retrieval combining TF-IDF, Word2Vec, SBERT embeddings, and cross-modal CLIP embeddings, followed by cross-encoder reranking and LLM-based answer generation.
 
