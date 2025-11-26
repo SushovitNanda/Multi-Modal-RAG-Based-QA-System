@@ -28,13 +28,21 @@ from .retrieval import RetrievalArtifacts
 
 
 def _save_chunks(chunks: List[dict]) -> None:
-    config.PROCESSED_JSON.write_text(json.dumps(chunks, indent=2), encoding="utf-8")
+    try:
+        config.PROCESSED_JSON.write_text(json.dumps(chunks, indent=2), encoding="utf-8")
+    except (IOError, OSError) as e:
+        print(f"Warning: Could not save chunks to {config.PROCESSED_JSON}: {e}")
+        raise
 
 
 def _load_chunks() -> Optional[List[dict]]:
     if not config.PROCESSED_JSON.exists():
         return None
-    return json.loads(config.PROCESSED_JSON.read_text(encoding="utf-8"))
+    try:
+        return json.loads(config.PROCESSED_JSON.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, IOError, OSError) as e:
+        print(f"Warning: Could not load chunks from {config.PROCESSED_JSON}: {e}")
+        return None
 
 
 def load_existing_artifacts() -> Optional[RetrievalArtifacts]:
@@ -52,7 +60,11 @@ def load_existing_artifacts() -> Optional[RetrievalArtifacts]:
     if chunks is None:
         return None
 
-    tfidf_vectorizer = load_pickle(config.TFIDF_MODEL_PATH)
+    try:
+        tfidf_vectorizer = load_pickle(config.TFIDF_MODEL_PATH)
+    except Exception:
+        return None
+    
     tfidf_matrix = None
     try:
         from scipy import sparse

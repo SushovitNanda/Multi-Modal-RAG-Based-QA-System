@@ -1,8 +1,8 @@
-# Multi-Modal RAG Based QA Chatbot
+# Multi-Modal RAG QA Chatbot
 
 A comprehensive Retrieval-Augmented Generation (RAG) system for question-answering over multi-modal documents (PDFs with text, tables, images, charts). The system uses hybrid retrieval combining TF-IDF, Word2Vec, SBERT embeddings, and cross-modal CLIP embeddings, followed by cross-encoder reranking and LLM-based answer generation.
 
-##  Features
+## 🚀 Features
 
 - **Multi-Modal Document Processing**
   - Text extraction from PDFs
@@ -33,8 +33,7 @@ A comprehensive Retrieval-Augmented Generation (RAG) system for question-answeri
   - **Streamlit Web UI**: Interactive chatbot with real-time retrieval visualization
   - **CLI Interface**: Command-line tool for batch processing and scripting
 
-
-##  Research & Methodology
+## 🔬 Research & Methodology
 
 ### Preliminary Information Retrieval Studies
 
@@ -112,7 +111,7 @@ A cross-encoder reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`) is applied aft
 
 The reranker operates on the top 20 candidates from hybrid retrieval, selecting the final top 5 passages for LLM generation.
 
-##  Requirements
+## 📋 Requirements
 
 ### System Requirements
 - Python 3.8+
@@ -131,7 +130,7 @@ All dependencies are listed in `requirements.txt`. Key packages include:
 - `pytesseract` - OCR
 - `torch` - Deep learning framework
 
-##  Installation
+## 🛠️ Installation
 
 ### Option 1: Automatic Installation (Windows)
 
@@ -158,7 +157,7 @@ All dependencies are listed in `requirements.txt`. Key packages include:
 4. **Place documents:**
    - Add PDF files to `data/raw/` directory
 
-##  Quick Start
+## 🎯 Quick Start
 
 ### Streamlit Web Interface
 
@@ -204,7 +203,7 @@ python cli.py --rebuild "Your question"
 - `--no-rrf`: Disable RRF (use weighted sum)
 - `--verbose, -v`: Show retrieved passages and scores
 
-##  Project Structure
+## 📁 Project Structure
 
 ```
 RAG-Based QA System/
@@ -235,7 +234,7 @@ RAG-Based QA System/
     └── Pipeline.md            # Detailed module documentation
 ```
 
-##  Configuration
+## ⚙️ Configuration
 
 ### Model Configuration
 
@@ -263,7 +262,7 @@ Edit `rag_pipeline/config.py` or use environment variables:
 - `sbert`: 0.15 (15%)
 - `cross_encoder`: 0.20 (20%)
 
-##  Pipeline Workflow
+## 🔄 Pipeline Workflow
 
 1. **Ingestion** (`ingestion.py`)
    - Extract text from PDFs using LangChain/PyMuPDF
@@ -299,7 +298,7 @@ Edit `rag_pipeline/config.py` or use environment variables:
    - Call LLM for answer generation
    - Return answer with source citations
 
-## Streamlit UI Features
+## 🎨 Streamlit UI Features
 
 ### Sidebar Configuration
 - **HF chat model**: Select or enter model name
@@ -316,7 +315,7 @@ Edit `rag_pipeline/config.py` or use environment variables:
   - Fusion component scores (TF-IDF, W2V, SBERT, CLIP)
   - Cross-encoder rerank scores
 
-## Evaluation Metrics
+## 📊 Evaluation Metrics
 
 The system includes evaluation utilities (`evaluation.py`) for measuring retrieval performance:
 
@@ -325,7 +324,7 @@ The system includes evaluation utilities (`evaluation.py`) for measuring retriev
 - **Precision/Recall/F1**: Classification metrics
 - **Precision@K / Recall@K / F1@K**: Top-K metrics
 
-## Advanced Usage
+## 🔧 Advanced Usage
 
 ### Custom Model Selection
 
@@ -365,7 +364,7 @@ cat questions.txt | while read q; do
 done
 ```
 
-## Troubleshooting
+## 🐛 Troubleshooting
 
 ### Common Issues
 
@@ -397,7 +396,13 @@ done
 - **Caching**: Pipeline artifacts are cached - rebuild only when needed
 - **Batch processing**: Use CLI for multiple questions to avoid UI overhead
 
-##  Contributing
+## 📚 Documentation
+
+- **Pipeline.md**: Detailed documentation of each module in `rag_pipeline/`
+- **Code comments**: Inline documentation in all Python files
+- **CLI help**: Run `python cli.py --help` for command-line options
+
+## 🤝 Contributing
 
 This is a modular system designed for easy extension:
 
@@ -406,10 +411,27 @@ This is a modular system designed for easy extension:
 - Customize prompts in `Prompt.json`
 - Add evaluation metrics in `evaluation.py`
 
-## Support
+## 📝 License
+
+This project is provided as-is for educational and research purposes.
+
+## 🙏 Acknowledgments
+
+- Built with LangChain, Hugging Face Transformers, and Streamlit
+- Uses sentence-transformers for embeddings
+- FAISS for efficient vector search
+- Various open-source PDF processing libraries
+
+## 📧 Support
 
 For issues or questions:
 1. Check the troubleshooting section
 2. Review `Pipeline.md` for module details
+3. Examine error messages for specific guidance
 
+---
+
+**Version**: 1.0  
+**Last Updated**: 2025  
+**Author**: RAG-Based QA System
 

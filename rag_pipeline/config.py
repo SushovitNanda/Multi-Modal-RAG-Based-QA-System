@@ -4,7 +4,6 @@ Centralized configuration for the multi-modal RAG QA system.
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,7 +15,7 @@ RAW_DOC_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-PROMPT_PATH = PROJECT_ROOT / "Prompt.json"
+# PROMPT_PATH removed - using default values instead
 ASSIGNMENT_DOC_LOCAL_PATH = PROJECT_ROOT / "multi-modal_rag_qa_assignment.docx"
 API_KEY_PATH = PROJECT_ROOT / "Api_key.txt"
 HF_TOKEN_PATH = PROJECT_ROOT / "Hf_token.txt"
@@ -56,7 +55,7 @@ class HybridWeights:
     def validate(self) -> None:
         total = self.tfidf + self.word2vec + self.sbert + self.cross_encoder
         if not 0.99 <= total <= 1.01:
-            raise ValueError("Hybrid weights must sum to 1.0 per Prompt.json guidance.")
+            raise ValueError("Hybrid weights must sum to 1.0.")
 
 
 @dataclass
@@ -72,16 +71,34 @@ class PromptInstructions:
 
 
 def load_prompt_instructions() -> PromptInstructions:
-    with PROMPT_PATH.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    return PromptInstructions(**data)
+    """Load prompt instructions with default values (no JSON file required)."""
+    return PromptInstructions(
+        role="assistant",
+        name="RAG QA Assistant",
+        purpose="to answer questions based on retrieved document passages",
+        behavior_rules={
+            "strict_grounding": "You must only use information from the provided context chunks. Do not use external knowledge.",
+            "citation_requirement": "Always cite the source chunk when referencing specific information.",
+            "confidence_policy": "If the context does not contain relevant information, clearly state that no relevant information was found."
+        },
+        rag_pipeline={
+            "modalities_supported": ["text", "table", "image"]
+        },
+        langchain_components={},
+        answer_format={},
+        failure_modes={}
+    )
 
 
 def load_openai_key() -> str | None:
     if not API_KEY_PATH.exists():
         return None
-    key = API_KEY_PATH.read_text(encoding="utf-8").strip()
-    return key or None
+    try:
+        key = API_KEY_PATH.read_text(encoding="utf-8").strip()
+        return key or None
+    except (IOError, OSError) as e:
+        print(f"Warning: Could not read API key from {API_KEY_PATH}: {e}")
+        return None
 
 
 def load_hf_token() -> str | None:
@@ -89,7 +106,11 @@ def load_hf_token() -> str | None:
     if token:
         return token
     if HF_TOKEN_PATH.exists():
-        return HF_TOKEN_PATH.read_text(encoding="utf-8").strip() or None
+        try:
+            return HF_TOKEN_PATH.read_text(encoding="utf-8").strip() or None
+        except (IOError, OSError) as e:
+            print(f"Warning: Could not read HF token from {HF_TOKEN_PATH}: {e}")
+            return None
     return None
 
 

@@ -26,8 +26,12 @@ def save_pickle(obj: Any, path: Path) -> None:
 
 
 def load_pickle(path: Path) -> Any:
-    with path.open("rb") as f:
-        return pickle.load(f)
+    try:
+        with path.open("rb") as f:
+            return pickle.load(f)
+    except (IOError, OSError, pickle.PickleError) as e:
+        print(f"Warning: Could not load pickle from {path}: {e}")
+        raise
 
 
 def build_tfidf(doc_texts: List[str]) -> Tuple[TfidfVectorizer, Any]:
@@ -80,8 +84,13 @@ def build_sbert_and_faiss(
 
 
 def persist_doc_texts(doc_texts: List[str]) -> None:
-    with config.DOC_TEXTS_PATH.open("w", encoding="utf-8") as f:
-        json.dump(doc_texts, f, indent=2)
+    try:
+        config.DOC_TEXTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with config.DOC_TEXTS_PATH.open("w", encoding="utf-8") as f:
+            json.dump(doc_texts, f, indent=2)
+    except (IOError, OSError) as e:
+        print(f"Warning: Could not save doc texts to {config.DOC_TEXTS_PATH}: {e}")
+        raise
 
 
 def cosine_sim_matrix(vectorizer: TfidfVectorizer, tfidf_matrix, query: str) -> np.ndarray:
