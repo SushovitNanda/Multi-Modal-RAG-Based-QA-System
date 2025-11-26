@@ -25,8 +25,6 @@ class RetrievalArtifacts:
     sbert_model: SentenceTransformer
     sbert_doc_embs: np.ndarray
     faiss_index: faiss.Index
-    clip_model: Optional[SentenceTransformer] = None  # For cross-modal retrieval
-    clip_image_embs: Optional[np.ndarray] = None  # Image embeddings from CLIP
 
 
 def _normalize(scores: np.ndarray) -> np.ndarray:
@@ -46,12 +44,21 @@ def reciprocal_rank_fusion(rankings: List[np.ndarray], k: int = 60) -> np.ndarra
     Returns:
         Combined RRF scores for all documents
     """
-    n_docs = max(max(rank) for rank in rankings) + 1 if rankings else 0
+    if not rankings:
+        return np.array([])
+    
+    # Filter out empty rankings and get max doc index
+    valid_rankings = [rank for rank in rankings if len(rank) > 0]
+    if not valid_rankings:
+        return np.array([])
+    
+    n_docs = max(max(rank) for rank in valid_rankings) + 1
     rrf_scores = np.zeros(n_docs)
     
-    for ranking in rankings:
+    for ranking in valid_rankings:
         for rank, doc_idx in enumerate(ranking, start=1):
-            rrf_scores[doc_idx] += 1.0 / (k + rank)
+            if 0 <= doc_idx < n_docs:
+                rrf_scores[doc_idx] += 1.0 / (k + rank)
     
     return rrf_scores
 
@@ -65,7 +72,28 @@ def hybrid_retrieval(
     """
     Hybrid retrieval with optional RRF and cross-modal support.
     """
+    # Handle empty query
+    if not query or not query.strip():
+        n_docs = len(artifacts.chunks)
+        return np.array([], dtype=int), np.array([]), {
+            "tfidf": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+            "w2v": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+            "sbert": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+            "clip": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+            "fused": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+        }
+    
     n_docs = len(artifacts.chunks)
+    
+    # Handle empty document collection
+    if n_docs == 0:
+        return np.array([], dtype=int), np.array([]), {
+            "tfidf": np.array([]),
+            "w2v": np.array([]),
+            "sbert": np.array([]),
+            "clip": np.array([]),
+            "fused": np.array([]),
+        }
     
     # 1. TF-IDF retrieval
     tfidf_scores = cosine_sim_matrix(artifacts.tfidf_vectorizer, artifacts.tfidf_matrix, query)
@@ -93,30 +121,23 @@ def hybrid_retrieval(
     sbert_scores = np.dot(artifacts.sbert_doc_embs, q_sbert.reshape(-1))
     sbert_ranking = np.argsort(sbert_scores)[::-1]
 
-    # 4. Cross-modal CLIP retrieval (if available)
-    clip_scores = None
-    clip_ranking = None
-    if artifacts.clip_model is not None and artifacts.clip_image_embs is not None:
-        # Encode query text with CLIP
-        query_emb = artifacts.clip_model.encode([query], convert_to_numpy=True, show_progress_bar=False)
-        faiss.normalize_L2(query_emb)
-        # Compute similarity with image embeddings
-        clip_scores = np.dot(artifacts.clip_image_embs, query_emb.reshape(-1))
-        clip_ranking = np.argsort(clip_scores)[::-1]
-
     # Normalize component scores for display
     tfidf_norm = _normalize(tfidf_scores)
     w2v_norm = _normalize(w2v_scores)
     sbert_norm = _normalize(sbert_scores)
-    clip_norm = _normalize(clip_scores) if clip_scores is not None else np.zeros(n_docs)
 
     # Choose fusion method: RRF or weighted sum
     if use_rrf:
         # Reciprocal Rank Fusion
         rankings = [tfidf_ranking, w2v_ranking, sbert_ranking]
-        if clip_ranking is not None:
-            rankings.append(clip_ranking)
         fused = reciprocal_rank_fusion(rankings, k=config.RRF_K)
+        # If RRF returns empty array (shouldn't happen), fall back to weighted sum
+        if len(fused) == 0:
+            fused = (
+                config.HYBRID_WEIGHTS.tfidf * tfidf_norm
+                + config.HYBRID_WEIGHTS.word2vec * w2v_norm
+                + config.HYBRID_WEIGHTS.sbert * sbert_norm
+            )
     else:
         # Weighted sum (original method)
         fused = (
@@ -124,17 +145,22 @@ def hybrid_retrieval(
             + config.HYBRID_WEIGHTS.word2vec * w2v_norm
             + config.HYBRID_WEIGHTS.sbert * sbert_norm
         )
-        if clip_scores is not None:
-            # Add CLIP with small weight if available
-            fused += 0.1 * clip_norm
 
+    if len(fused) == 0:
+        # Return empty results if no documents
+        return np.array([], dtype=int), np.array([]), {
+            "tfidf": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+            "w2v": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+            "sbert": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+            "fused": np.zeros(n_docs) if n_docs > 0 else np.array([]),
+        }
+    
     top_idxs = np.argsort(fused)[::-1][:top_k]
     top_scores = fused[top_idxs]
     component_scores = {
         "tfidf": tfidf_norm,
         "w2v": w2v_norm,
         "sbert": sbert_norm,
-        "clip": clip_norm if clip_scores is not None else np.zeros(n_docs),
         "fused": fused,
     }
     return top_idxs, top_scores, component_scores
@@ -145,52 +171,44 @@ def cross_encoder_rerank(
     candidate_texts: List[str],
     top_k: int = config.TOP_K_FINAL,
     cross_encoder_model: CrossEncoder | None = None,
-    artifacts: Optional[RetrievalArtifacts] = None,
-    candidate_chunk_indices: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Rerank candidates using cross-encoder model with optional cross-modal support.
+    Rerank candidates using cross-encoder model.
     
     Args:
         query: User query text
         candidate_texts: List of candidate text passages
         top_k: Number of top results to return
         cross_encoder_model: Pre-loaded cross-encoder model
-        artifacts: Retrieval artifacts (for cross-modal reranking)
-        candidate_chunk_indices: Original chunk indices for candidates (for CLIP mapping)
     
     Returns:
         order: Indices of top-k candidates (sorted by score, highest first)
         raw_scores: Raw cross-encoder scores (can be negative)
         normalized_scores: Scores normalized to [0, 1] range for threshold comparison
     """
+    # Handle empty candidate list
+    if not candidate_texts or len(candidate_texts) == 0:
+        return np.array([], dtype=int), np.array([]), np.array([])
+    
     cross_encoder = cross_encoder_model or CrossEncoder(config.CROSS_ENCODER_NAME, device=config.DEVICE)
     pairs = [[query, text] for text in candidate_texts]
     raw_scores = cross_encoder.predict(pairs, show_progress_bar=False)
     
-    # Cross-modal reranking: boost scores for image chunks if CLIP similarity is high
-    if (artifacts is not None and artifacts.clip_model is not None and 
-        artifacts.clip_image_embs is not None and candidate_chunk_indices is not None):
-        # Encode query with CLIP
-        query_clip_emb = artifacts.clip_model.encode([query], convert_to_numpy=True, show_progress_bar=False)
-        faiss.normalize_L2(query_clip_emb)
-        
-        # Boost scores for image chunks based on CLIP similarity
-        for cand_idx, chunk_idx in enumerate(candidate_chunk_indices):
-            if chunk_idx < len(artifacts.chunks):
-                chunk = artifacts.chunks[chunk_idx]
-                if chunk.get("type") == "image_ocr" and chunk_idx < len(artifacts.clip_image_embs):
-                    clip_sim = np.dot(artifacts.clip_image_embs[chunk_idx], query_clip_emb.reshape(-1))
-                    # Boost cross-encoder score with CLIP similarity (weighted combination)
-                    raw_scores[cand_idx] = 0.7 * raw_scores[cand_idx] + 0.3 * clip_sim * 5.0  # Scale CLIP score
+    # Ensure raw_scores is a numpy array
+    raw_scores = np.asarray(raw_scores)
     
     # Normalize scores to [0, 1] for threshold comparison
+    if len(raw_scores) == 0:
+        return np.array([], dtype=int), np.array([]), np.array([])
+    
     if raw_scores.max() - raw_scores.min() > 1e-9:
         normalized_scores = (raw_scores - raw_scores.min()) / (raw_scores.max() - raw_scores.min())
     else:
         normalized_scores = np.ones_like(raw_scores) * 0.5  # All same score
     
     order = np.argsort(raw_scores)[::-1][:top_k]
+    # Ensure order indices are valid
+    order = order[order < len(raw_scores)]
     return order, raw_scores[order], normalized_scores[order]
 
 

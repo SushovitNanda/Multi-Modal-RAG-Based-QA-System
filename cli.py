@@ -15,6 +15,7 @@ from rag_pipeline.pipeline import build_pipeline_and_index
 from rag_pipeline.retrieval import cross_encoder_rerank, hybrid_retrieval
 from sentence_transformers import CrossEncoder
 import torch
+import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
 
@@ -122,17 +123,36 @@ def answer_question(
 ) -> Dict[str, Any]:
     """Answer a question using the RAG pipeline."""
     candidate_idxs, candidate_scores, comp_scores = hybrid_retrieval(query, artifacts, use_rrf=use_rrf)
-    candidates = [artifacts.chunks[i] for i in candidate_idxs]
+    
+    # Validate candidate indices to prevent IndexError
+    if len(candidate_idxs) == 0:
+        return {
+            "answer": "No relevant information found in the ingested documents.",
+            "final_docs": [],
+            "rerank_scores": [],
+        }
+    
+    # Filter out invalid indices
+    valid_idxs = [i for i in candidate_idxs if 0 <= i < len(artifacts.chunks)]
+    if len(valid_idxs) == 0:
+        return {
+            "answer": "No relevant information found in the ingested documents.",
+            "final_docs": [],
+            "rerank_scores": [],
+        }
+    
+    candidates = [artifacts.chunks[i] for i in valid_idxs]
 
     order, rerank_scores_raw, rerank_scores_norm = cross_encoder_rerank(
         query,
         [c["content"] for c in candidates],
         cross_encoder_model=cross_encoder,
         top_k=config.TOP_K_FINAL,
-        artifacts=artifacts,
-        candidate_chunk_indices=candidate_idxs,
     )
-    final_docs = [candidates[i] for i in order]
+    
+    # Validate order indices to prevent IndexError
+    valid_order = [i for i in order if 0 <= i < len(candidates)]
+    final_docs = [candidates[i] for i in valid_order]
 
     if not final_docs or len(rerank_scores_norm) == 0:
         answer = "No relevant information found in the ingested documents."

@@ -1,6 +1,6 @@
 # Multi-Modal RAG Based QA Chatbot
 
-A comprehensive Retrieval-Augmented Generation (RAG) system for question-answering over multi-modal documents (PDFs with text, tables, images, charts). The system uses hybrid retrieval combining TF-IDF, Word2Vec, SBERT embeddings, and cross-modal CLIP embeddings, followed by cross-encoder reranking and LLM-based answer generation.
+A comprehensive Retrieval-Augmented Generation (RAG) system for question-answering over multi-modal documents (PDFs with text, tables, images, charts). The system uses hybrid retrieval combining TF-IDF, Word2Vec, and SBERT embeddings, followed by cross-encoder reranking and LLM-based answer generation. The system also includes summarization and briefing generation capabilities, along with performance monitoring through latency metrics.
 
 ##  Features
 
@@ -14,13 +14,11 @@ A comprehensive Retrieval-Augmented Generation (RAG) system for question-answeri
   - **TF-IDF**: Term frequency-inverse document frequency for keyword matching
   - **Word2Vec**: Semantic word embeddings for lexical similarity
   - **SBERT**: Dense semantic embeddings for contextual understanding
-  - **CLIP**: Cross-modal vision-text embeddings for image retrieval
   - **Reciprocal Rank Fusion (RRF)**: Optional rank-based fusion method
   - **Weighted Sum**: Score-based fusion with configurable weights
 
 - **Advanced Reranking**
   - Cross-encoder reranking for precision
-  - Cross-modal reranking (CLIP + cross-encoder) for image chunks
   - Relevance threshold filtering to prevent hallucinations
 
 - **LLM Integration**
@@ -28,6 +26,17 @@ A comprehensive Retrieval-Augmented Generation (RAG) system for question-answeri
   - Local model loading using Transformers library
   - ChatML-compatible prompt formatting
   - Configurable generation parameters
+
+- **Summarization and Briefing**
+  - Document summary generation
+  - Executive summaries
+  - Topic-focused briefings
+  - Customizable summary types
+
+- **Performance Monitoring**
+  - Latency metrics dashboard
+  - Real-time performance tracking
+  - Historical latency analysis
 
 - **User Interfaces**
   - **Streamlit Web UI**: Interactive chatbot with real-time retrieval visualization
@@ -43,15 +52,15 @@ The selection of retrieval methods (TF-IDF, Word2Vec, SBERT) was based on compre
 
 The preliminary studies compared 13 different retrieval methods using standard IR metrics (MRR, NDCG, Precision, Recall, F1):
 
-| Method | MRR | NDCG | F1 | F1@5 |
-|--------|-----|------|----|----|
-| **TF-IDF (1-gram)** | 0.502 | 0.453 | 0.224 | 0.211 |
-| **TF-IDF (2-gram)** | 0.499 | 0.452 | 0.228 | 0.215 |
-| **Word2Vec** | 0.405 | 0.377 | 0.174 | 0.165 |
-| **TF-IDF + Word2Vec** | **0.502** | **0.454** | **0.232** | **0.216** |
-| Sentence-BERT | 0.399 | 0.363 | 0.168 | 0.164 |
-| MPNet | 0.439 | 0.372 | 0.178 | 0.181 |
-| LaBSE | 0.415 | 0.397 | 0.187 | 0.182 |
+| Method | MRR | NDCG | F1 |
+|--------|-----|------|----|
+| **TF-IDF (1-gram)** | 0.502 | 0.453 | 0.224 |
+| **TF-IDF (2-gram)** | 0.499 | 0.452 | 0.228 |
+| **Word2Vec** | 0.405 | 0.377 | 0.174 |
+| **TF-IDF + Word2Vec** | **0.502** | **0.454** | **0.232** |
+| Sentence-BERT | 0.399 | 0.363 | 0.168 |
+| MPNet | 0.439 | 0.372 | 0.178 |
+| LaBSE | 0.415 | 0.397 | 0.187 |
 
 **Key Finding**: The combination of TF-IDF + Word2Vec achieved the best overall performance, outperforming dense transformer models (SBERT, MPNet) on this specific dataset.
 
@@ -106,7 +115,6 @@ A cross-encoder reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`) is applied aft
 
 - **Higher Precision**: Cross-encoders see query and passage together, enabling more accurate relevance scoring
 - **Fine-Grained Ranking**: Better at distinguishing subtle differences between top candidates
-- **Cross-Modal Support**: Boosts scores for image chunks when CLIP similarity is high
 - **Hallucination Prevention**: Normalized scores enable relevance threshold filtering (default: 0.30)
 
 The reranker operates on the top 20 candidates from hybrid retrieval, selecting the final top 5 passages for LLM generation.
@@ -122,7 +130,7 @@ The reranker operates on the top 20 candidates from hybrid retrieval, selecting 
 All dependencies are listed in `requirements.txt`. Key packages include:
 - `streamlit` - Web UI framework
 - `transformers` - Hugging Face transformers for LLM
-- `sentence-transformers` - Embedding models (SBERT, CLIP)
+- `sentence-transformers` - Embedding models (SBERT)
 - `faiss-cpu` - Vector similarity search
 - `langchain` - Document processing
 - `PyMuPDF`, `pdfplumber` - PDF processing
@@ -231,6 +239,7 @@ RAG-Based QA System/
     ├── retrieval.py           # Hybrid retrieval and reranking
     ├── pipeline.py            # Main orchestration
     ├── evaluation.py          # IR metrics (MRR, NDCG, P/R/F)
+    ├── summarization.py       # Summarization and briefing generation
     └── Pipeline.md            # Detailed module documentation
 ```
 
@@ -243,7 +252,6 @@ Edit `rag_pipeline/config.py` or use environment variables:
 - `HF_CHAT_MODEL`: LLM model name (default: `Qwen/Qwen2.5-0.5B-Instruct`)
 - `SBERT_MODEL_NAME`: Dense embedding model (default: `all-mpnet-base-v2`)
 - `CROSS_ENCODER_NAME`: Reranking model (default: `cross-encoder/ms-marco-MiniLM-L-6-v2`)
-- `CLIP_MODEL_NAME`: Vision-text model (default: `sentence-transformers/clip-ViT-B-32`)
 
 ### Retrieval Parameters
 
@@ -279,7 +287,6 @@ Edit `rag_pipeline/config.py` or use environment variables:
    - **TF-IDF**: Build sparse vectorizer and matrix
    - **Word2Vec**: Generate average word embeddings
    - **SBERT**: Generate dense semantic embeddings
-   - **CLIP**: Generate vision embeddings for images
    - Build FAISS index for fast similarity search
 
 4. **Hybrid Retrieval** (`retrieval.py`)
@@ -289,7 +296,6 @@ Edit `rag_pipeline/config.py` or use environment variables:
 
 5. **Reranking** (`retrieval.py`)
    - Cross-encoder reranking for precision
-   - Cross-modal boosting for image chunks
    - Select top 5 final passages
 
 6. **Answer Generation** (`app.py` / `cli.py`)
@@ -297,6 +303,12 @@ Edit `rag_pipeline/config.py` or use environment variables:
    - Generate prompt with instructions
    - Call LLM for answer generation
    - Return answer with source citations
+
+7. **Summarization** (`summarization.py`)
+   - Generate document summaries
+   - Create executive briefings
+   - Topic-focused briefing generation
+   - Uses hybrid retrieval to find relevant content
 
 ##  Streamlit UI Features
 
@@ -312,8 +324,10 @@ Edit `rag_pipeline/config.py` or use environment variables:
 - **Enter to send**: Submit questions with Enter key
 - **Retrieval debug panel**: Expandable section showing:
   - Top retrieved passages with scores
-  - Fusion component scores (TF-IDF, W2V, SBERT, CLIP)
+  - Fusion component scores (TF-IDF, W2V, SBERT)
   - Cross-encoder rerank scores
+- **Summarization panel**: Generate document summaries and briefings
+- **Evaluation dashboard**: View latency metrics and performance statistics
 
 ##  Evaluation Metrics
 
@@ -322,9 +336,13 @@ The system includes evaluation utilities (`evaluation.py`) for measuring retriev
 - **MRR** (Mean Reciprocal Rank): Position of first relevant document
 - **NDCG** (Normalized Discounted Cumulative Gain): Ranking quality
 - **Precision/Recall/F1**: Classification metrics
-- **Precision@K / Recall@K / F1@K**: Top-K metrics
 
-## 🔧 Advanced Usage
+The Streamlit UI includes a performance dashboard that tracks:
+- **Latency Metrics**: Total, retrieval, reranking, and LLM generation times
+- **Historical Performance**: Latency trends over time
+- **Average Metrics**: Mean latency for each pipeline stage
+
+##  Advanced Usage
 
 ### Custom Model Selection
 
@@ -347,7 +365,6 @@ export HF_CHAT_MODEL="Qwen/Qwen2.5-7B-Instruct"
 - After adding new PDFs to `data/raw/`
 - After changing chunking parameters
 - If cached data is corrupted
-- To regenerate CLIP embeddings
 
 **How to rebuild:**
 - Streamlit: Check "Rebuild processed data" checkbox, then click "Build / Load pipeline"

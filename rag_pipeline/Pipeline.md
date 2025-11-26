@@ -15,7 +15,8 @@ rag_pipeline/
 ├── embeddings.py         # Embedding generation (TF-IDF, W2V, SBERT)
 ├── retrieval.py         # Hybrid retrieval and reranking
 ├── pipeline.py          # Main orchestration
-└── evaluation.py        # IR evaluation metrics
+├── evaluation.py        # IR evaluation metrics
+└── summarization.py     # Summarization and briefing generation
 ```
 
 ---
@@ -52,7 +53,6 @@ from rag_pipeline import config
 - `HF_CHAT_MODEL`: Default LLM model (`Qwen/Qwen2.5-0.5B-Instruct`)
 - `SBERT_MODEL_NAME`: Dense embedding model (`all-mpnet-base-v2`)
 - `CROSS_ENCODER_NAME`: Reranking model (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
-- `CLIP_MODEL_NAME`: Vision-text model (`sentence-transformers/clip-ViT-B-32`)
 - `WORD2VEC_NAME`: Word2Vec model (`word2vec-google-news-300`)
 
 #### **Retrieval Parameters**
@@ -298,7 +298,6 @@ The retrieval methods implemented in this module (TF-IDF, Word2Vec, SBERT) were 
    - Applied after initial retrieval for higher precision
    - Sees query and passage together for accurate relevance scoring
    - Enables fine-grained ranking of top candidates
-   - Supports cross-modal reranking (CLIP + cross-encoder) for image chunks
    - Provides normalized scores for relevance threshold filtering (prevents hallucinations)
 
 ### Data Classes
@@ -313,8 +312,6 @@ Container for all retrieval components:
 - `sbert_model`: SentenceTransformer model
 - `sbert_doc_embs`: SBERT document embeddings
 - `faiss_index`: FAISS index for fast search
-- `clip_model`: CLIP model for vision-text (optional)
-- `clip_image_embs`: CLIP image embeddings (optional)
 
 ### Functions
 
@@ -347,11 +344,7 @@ Container for all retrieval components:
      - Encode query with SBERT
      - Use FAISS for fast similarity search
      - Get ranking
-  4. **CLIP Retrieval** (if available):
-     - Encode query text with CLIP
-     - Compute similarity with image embeddings
-     - Get ranking
-  5. **Fusion**:
+  4. **Fusion**:
      - **If RRF**: Combine rankings using reciprocal rank fusion
      - **If Weighted Sum**: Normalize scores and compute weighted sum
   6. **Normalization**: Normalize component scores for display
@@ -360,20 +353,16 @@ Container for all retrieval components:
   - `top_scores`: Corresponding scores
   - `component_scores`: Dict with individual method scores
 
-#### **`cross_encoder_rerank(query, candidate_texts, top_k, cross_encoder_model, artifacts, candidate_chunk_indices)`**
-- **Purpose**: Rerank candidates using cross-encoder with cross-modal support
+#### **`cross_encoder_rerank(query, candidate_texts, top_k, cross_encoder_model)`**
+- **Purpose**: Rerank candidates using cross-encoder
 - **Research Basis**: Cross-encoder reranking was added to improve precision on top candidates after preliminary studies showed initial retrieval could be further refined. The model (`cross-encoder/ms-marco-MiniLM-L-6-v2`) is specifically trained for passage reranking.
 - **Process**:
   1. **Cross-Encoder Scoring**:
      - Create (query, passage) pairs
      - Score each pair using cross-encoder model
-  2. **Cross-Modal Boosting** (if CLIP available):
-     - Identify image chunks in candidates
-     - Compute CLIP similarity between query and images
-     - Boost cross-encoder scores: `0.7 * cross_encoder + 0.3 * clip_sim * 5.0`
-  3. **Normalization**:
+  2. **Normalization**:
      - Normalize scores to [0, 1] for threshold comparison
-  4. **Selection**:
+  3. **Selection**:
      - Sort by score (descending)
      - Return top-K
 - **Returns**: Tuple of:
@@ -410,7 +399,6 @@ Container for all retrieval components:
   - TF-IDF vectorizer and matrix
   - Word2Vec embeddings (if available)
   - SBERT embeddings and FAISS index
-  - CLIP embeddings (if available)
 - **Returns**: `RetrievalArtifacts` object or None if files missing
 
 #### **`build_pipeline_and_index(rebuild: bool)`**
@@ -435,13 +423,7 @@ Container for all retrieval components:
      - Generate dense embeddings
      - Build FAISS index
      - Save to disk
-  7. **CLIP** (for images):
-     - Load CLIP model
-     - Extract image paths from chunks
-     - Encode images
-     - Create embedding array (zero-padded for non-image chunks)
-     - Save to disk
-  8. **Return**: `RetrievalArtifacts` with all components
+  7. **Return**: `RetrievalArtifacts` with all components
 
 **Caching Strategy**:
 - All artifacts saved to `data/processed/`
@@ -475,21 +457,75 @@ Container for all retrieval components:
   1. **MRR** (Mean Reciprocal Rank):
      - `1 / rank` of first relevant document in top-K
      - Measures how quickly relevant docs appear
-  2. **NDCG@K** (Normalized Discounted Cumulative Gain):
+  2. **NDCG** (Normalized Discounted Cumulative Gain):
      - Discounted gain based on position
      - Normalized by ideal DCG
-     - Measures ranking quality
-  3. **NDCG** (Overall):
-     - Same as NDCG@K but for top 100
-  4. **Precision/Recall/F1**:
+     - Measures ranking quality (computed for top 100)
+  3. **Precision/Recall/F1**:
      - Overall metrics (cutoff = 2 * |relevant_set|)
-  5. **Precision@K / Recall@K / F1@K**:
-     - Top-K specific metrics
 - **Returns**: Dict with all metric values
 
 **Evaluation Strategy**:
 - Uses page-based relevance (chunks from same page are relevant to each other)
 - Can be extended to use manual relevance judgments
+
+---
+
+##  `summarization.py`
+
+**Purpose**: Generate document summaries and briefings using the LLM.
+
+### Functions
+
+#### **`generate_summary(artifacts, model, tokenizer, summary_type, max_chunks, focus_topic)`**
+- **Purpose**: Generate various types of summaries and briefings
+- **Parameters**:
+  - `artifacts`: Retrieval artifacts containing all document chunks
+  - `model`: LLM model for text generation
+  - `tokenizer`: LLM tokenizer
+  - `summary_type`: Type of summary ("document_summary", "briefing", "executive_summary", "topic_briefing")
+  - `max_chunks`: Maximum number of chunks to include in context (default: 50)
+  - `focus_topic`: Optional topic string for topic-focused briefings
+- **Process**:
+  1. **Chunk Selection**:
+     - If `focus_topic` provided: Uses hybrid retrieval to find relevant chunks for the topic
+     - Otherwise: Randomly samples chunks from all available chunks
+  2. **Context Building**:
+     - Combines selected chunk contents into a single context string
+  3. **Prompt Generation**:
+     - Constructs system prompt from `Prompt.json` instructions
+     - Creates user prompt based on `summary_type`:
+       - **document_summary**: Comprehensive summary of entire document
+       - **briefing**: Structured briefing with key points
+       - **executive_summary**: High-level executive summary
+       - **topic_briefing**: Detailed briefing focused on specific topic
+  4. **LLM Generation**:
+     - Formats prompt using chat template (if available)
+     - Generates summary using LLM with configurable parameters
+  5. **Metadata Collection**:
+     - Tracks chunks used, total chunks available, and generation latency
+- **Returns**: Dict with:
+  - `summary`: Generated summary text
+  - `type`: Summary type used
+  - `focus_topic`: Topic (if provided)
+  - `chunks_used`: Number of chunks included
+  - `total_chunks`: Total chunks available
+  - `latency`: Generation time in seconds
+
+#### **`generate_topic_briefing(artifacts, model, tokenizer, topic, max_chunks)`**
+- **Purpose**: Convenience wrapper for topic-focused briefings
+- **Parameters**:
+  - `artifacts`: Retrieval artifacts
+  - `model`: LLM model
+  - `tokenizer`: LLM tokenizer
+  - `topic`: Topic string to focus on
+  - `max_chunks`: Maximum chunks to include
+- **Returns**: Same as `generate_summary` with `summary_type="topic_briefing"`
+
+**Integration**:
+- Uses `hybrid_retrieval` from `retrieval.py` for topic-focused chunk selection
+- Leverages LLM prompt instructions from `config.py`
+- Can be called from Streamlit UI or CLI for on-demand summarization
 
 ---
 
@@ -508,7 +544,7 @@ Container for all retrieval components:
    ↓ (creates unified chunks)
    
 4. embeddings.py
-   ↓ (generates: TF-IDF, W2V, SBERT, CLIP)
+   ↓ (generates: TF-IDF, W2V, SBERT)
    
 5. retrieval.py
    ↓ (hybrid retrieval + reranking)
@@ -596,7 +632,7 @@ metrics = calculate_ir_metrics_for_query(
     labels, 
     k=5
 )
-print(f"MRR: {metrics['mrr']}, NDCG@5: {metrics['ndcg_at_k']}")
+print(f"MRR: {metrics['mrr']}, NDCG: {metrics['ndcg']}")
 ```
 
 ---

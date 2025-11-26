@@ -5,12 +5,19 @@ Top-level orchestration for ingestion, chunking, embeddings, and artifact loadin
 from __future__ import annotations
 
 import json
+import warnings
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
+
+# Suppress PDF processing warnings
+warnings.filterwarnings("ignore", message=".*Cannot set gray non-stroke color.*")
+warnings.filterwarnings("ignore", message=".*invalid float value.*")
 
 from . import config
 from .chunking import chunk_documents
@@ -79,17 +86,6 @@ def load_existing_artifacts() -> Optional[RetrievalArtifacts]:
     faiss_index = faiss.read_index(str(config.FAISS_INDEX_DIR / "index.faiss"))
     sbert_model = SentenceTransformer(config.SBERT_MODEL_NAME, device=config.DEVICE)
     
-    # Load CLIP model and embeddings if available
-    clip_model = None
-    clip_image_embs = None
-    if config.CLIP_EMB_PATH.exists():
-        try:
-            clip_model = SentenceTransformer(config.CLIP_MODEL_NAME, device=config.DEVICE)
-            clip_image_embs = np.load(config.CLIP_EMB_PATH)
-        except Exception:
-            clip_model = None
-            clip_image_embs = None
-
     return RetrievalArtifacts(
         chunks=chunks,
         tfidf_vectorizer=tfidf_vectorizer,
@@ -99,8 +95,6 @@ def load_existing_artifacts() -> Optional[RetrievalArtifacts]:
         sbert_model=sbert_model,
         sbert_doc_embs=sbert_doc_embs,
         faiss_index=faiss_index,
-        clip_model=clip_model,
-        clip_image_embs=clip_image_embs,
     )
 
 
@@ -110,7 +104,12 @@ def build_pipeline_and_index(rebuild: bool = False) -> RetrievalArtifacts:
         if existing:
             return existing
 
-    ingestion_outputs = ingest_documents(config.RAW_DOC_DIR, config.PROCESSED_DIR)
+    # Suppress PDF warnings during ingestion
+    stderr_buffer = StringIO()
+    with warnings.catch_warnings(), redirect_stderr(stderr_buffer):
+        warnings.simplefilter("ignore")
+        warnings.filterwarnings("ignore", message=".*")
+        ingestion_outputs = ingest_documents(config.RAW_DOC_DIR, config.PROCESSED_DIR)
     chunks = chunk_documents(
         ingestion_outputs["pages"],
         ingestion_outputs["tables"],
@@ -118,6 +117,11 @@ def build_pipeline_and_index(rebuild: bool = False) -> RetrievalArtifacts:
         config.CHUNK_SIZE,
         config.CHUNK_OVERLAP,
     )
+    
+    # Handle empty chunks
+    if not chunks or len(chunks) == 0:
+        raise ValueError("No documents were processed. Please ensure PDF files exist in the data/raw directory.")
+    
     _save_chunks(chunks)
 
     doc_texts = [chunk["content"] for chunk in chunks]
@@ -140,55 +144,6 @@ def build_pipeline_and_index(rebuild: bool = False) -> RetrievalArtifacts:
         doc_texts, model_name=config.SBERT_MODEL_NAME, faiss_index_path=config.FAISS_INDEX_DIR
     )
 
-    # Build CLIP embeddings for image chunks
-    clip_model = None
-    clip_image_embs = None
-    try:
-        from PIL import Image
-        clip_model = SentenceTransformer(config.CLIP_MODEL_NAME, device=config.DEVICE)
-        image_paths = []
-        image_chunk_indices = []
-        
-        # Collect image paths for chunks that have images
-        for idx, chunk in enumerate(chunks):
-            if chunk.get("type") == "image_ocr":
-                meta = chunk.get("metadata", {})
-                img_path = meta.get("image_path")
-                if img_path and Path(img_path).exists():
-                    image_paths.append(img_path)
-                    image_chunk_indices.append(idx)
-        
-        if image_paths:
-            print(f"Building CLIP embeddings for {len(image_paths)} images...")
-            # Load and encode images
-            images = []
-            valid_indices = []
-            for img_path in image_paths:
-                try:
-                    img = Image.open(img_path).convert("RGB")
-                    images.append(img)
-                    valid_indices.append(len(images) - 1)
-                except Exception:
-                    continue
-            
-            if images:
-                # Encode images with CLIP
-                image_embs = clip_model.encode(images, convert_to_numpy=True, show_progress_bar=True)
-                faiss.normalize_L2(image_embs)
-                
-                # Create full array (one embedding per chunk, zero for non-image chunks)
-                clip_image_embs = np.zeros((len(chunks), image_embs.shape[1]))
-                for valid_idx, chunk_idx in enumerate(image_chunk_indices):
-                    if valid_idx < len(valid_indices):
-                        clip_image_embs[chunk_idx] = image_embs[valid_indices[valid_idx]]
-                
-                np.save(config.CLIP_EMB_PATH, clip_image_embs)
-                print(f"Saved CLIP embeddings to {config.CLIP_EMB_PATH}")
-    except Exception as e:
-        print(f"Warning: Could not build CLIP embeddings: {e}")
-        clip_model = None
-        clip_image_embs = None
-
     return RetrievalArtifacts(
         chunks=chunks,
         tfidf_vectorizer=tfidf_vectorizer,
@@ -198,8 +153,6 @@ def build_pipeline_and_index(rebuild: bool = False) -> RetrievalArtifacts:
         sbert_model=sbert_model,
         sbert_doc_embs=sbert_doc_embs,
         faiss_index=faiss_index,
-        clip_model=clip_model,
-        clip_image_embs=clip_image_embs,
     )
 
 
